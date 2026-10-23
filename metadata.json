@@ -1,0 +1,13 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Id": "trsdizen",
+        "Name": "TRS Dizen",
+        "Description": "Pencereleri kendiliğinden yerleştirir: tek pencere tam ekran, iki pencere sağ ve sol, daha fazlası rastgele yarı. Uygulama kuralları ve elle müdahale önceliklidir.",
+        "Version": "1",
+        "License": "GPL-3.0",
+        "Authors": [{ "Name": "trs" }]
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js"
+}
