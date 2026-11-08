@@ -1,7 +1,7 @@
 #!/bin/bash
 # trs-pencere — trs-dizen yardımcı servisi: kurulum / kaldırma. SUDO GEREKMEZ, klavye dinlenmez.
-#   bash ~/projects/trs-dizen/pencere/kur.sh        kur / güncelle (önce sınama koşar)
-#   bash ~/projects/trs-dizen/pencere/kur.sh geri   kaldır (kayıtlar ~/.local/state/trs-dizen'de kalır)
+#   bash ~/.local/opt/trs-dizen/pencere/kur.sh        kur / güncelle (önce sınama koşar)
+#   bash ~/.local/opt/trs-dizen/pencere/kur.sh geri   kaldır (kayıtlar ~/.local/state/trs-dizen'de kalır)
 #
 # Kurulanlar: ~/.local/share/trs-pencere (program) · ~/.local/bin/trs-pencere · trs-pencere.service
 set -euo pipefail
