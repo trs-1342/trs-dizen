@@ -1,5 +1,5 @@
 /*
-    TRS Dizen — kendi pencere yerleştirme kuralımız (KWin betiği). Sürüm 3.
+    TRS Dizen — kendi pencere yerleştirme kuralımız (KWin betiği). Sürüm 4.
 
     HANGİ DURUMDA NE OLUR
     ─────────────────────
@@ -22,6 +22,12 @@
                          büyük açılmış) pencere, yanına sayılan yeni bir pencere gelince elle sayılmaktan
                          çıkar ve kurala göre bölünür (ör. Firefox tamken Sublime açılır: Sublime sol,
                          Firefox sağ). Başka pencereler varken büyüttüğün pencereye yine dokunulmaz
+                         İkinci istisna (yarı kurallı ÜSTÜN pencereler — bir yarıya yerleşen, ör. Firefox
+                         sağ, Konsole sol): bunların elle yerleşimi KALICI DEĞİLDİR. Elle yerleştirsen bile,
+                         bir EŞ pencere büyütülünce/geri alınınca o pencere kurala döner (otomatiğe düşer).
+                         Böylece bu iki pencere hep algoritmaya göre durur; elle müdahale "o an içindir",
+                         sonraki büyütmede yine yansımaya katılır (büyüten tam ⇒ öbürü de tam). Dar kapsam:
+                         "tam"/"-hep"/"orta" ve kuralsız pencerelerin elle yerleşimi KALICI kalır
       2. Kurallar        aşağıdaki yer türleri
       3. Genel kural     yukarıdaki n tablosu
 
@@ -91,6 +97,7 @@ const ISTEK_SURE = 1000;        // bir isteğin yanıtlanması için tanınan s�
 const DENEME = 3;               // pencere istenen yere gelmiyorsa en çok kaç kez yeniden istenir
 let DOGUM_SURE = 1500;          // açılıştan sonra programın kendi yaptığı büyütmeyi yok sayma süresi (ms)
 const DOGUM_BUYUTME = 1;        // o süre içinde programa en çok kaç büyütme tanınır; fazlası elledir
+const KOMSU_EN_AZ = 120;        // komşu uyumu: otomatik pencereye en az bu genişlik kalmalı (px), yoksa yarıda kalır
 let KURAL_HEMEN = true;         // kural değişince açık pencereler hemen yeni yerine geçsin (false: yeni açılışta)
 // Yukarıdaki üç karar kullanıcıca değiştirilebilir (TRS Durum → Davranış): kwinrc [Script-trsdizen]
 // KararDogumMs (0–5000), KararKapanisMs (0–2000), KararKuralHemen (1/0). Yoksa ya da geçersizse varsayılan kalır.
@@ -208,6 +215,7 @@ const durum = new Map();        // pencere kimliği → kayıt
 const pencereler = new Map();   // pencere kimliği → sinyalleri bağlanmış pencere
 let sayac = 0;
 let kendiCagri = 0;             // > 0 iken pencereyi BİZ değiştiriyoruz (eşzamanlı sinyaller bize ait)
+let sonEtkin = null;            // en son odaklanan (etkin) ilgili pencerenin kimliği — odak taşıması için
 const sayaclar = { diz: 0, islem: 0 };   // sınama ve teşhis için
 // Elle yerleştirilip kapanan programın yeri (tepsiye kapanan Discord gibi): program kimliği → yer.
 // Aynı program yeniden açılınca (başka penceresi yoksa) oraya konur ve elle sayılır. Yalnız bellekte;
@@ -226,6 +234,56 @@ function programinBaskaPenceresi(w, ad) {
         }
     }
     return false;
+}
+
+// ── Yardımcı servise olay (net.trs.Pencere): kayıt + sayımla öğrenme + Firefox gizli parlaklık ──
+// KWin betiği dosya yazamaz; dışarıya yalnız D-Bus ile veri verir. Servis kapalıysa çağrı sessizce düşer:
+// dizme ASLA bundan etkilenmez. GİZLİLİK: yalnız program adı + ne yaptığın gider; pencere BAŞLIĞI gitmez.
+function servise() {
+    try {
+        const argv = ["net.trs.Pencere", "/net/trs/Pencere", "net.trs.Pencere"]
+            .concat(Array.prototype.slice.call(arguments)).concat([function () {}]);
+        callDBus.apply(null, argv);
+    } catch (hata) { /* servis yok: önemli değil */ }
+}
+
+function olayBildir(tur, w, ek) {
+    try {
+        const k = { tur: tur, prog: programAdi(w) };
+        try { k.masaustu = workspace.desktops.indexOf(w.desktops[0]); } catch (e) { /* yok */ }
+        try { k.ekran = workspace.screens.indexOf(w.output); } catch (e) { /* yok */ }
+        if (ek) { Object.assign(k, ek); }
+        servise("olay", JSON.stringify(k));
+    } catch (hata) { /* yut: dizmeyi bozma */ }
+}
+
+// Her dizmeden sonra: elle olmuş pencereleri BİR KEZ bildir (ne zaman, hangi yana koydun — öğrenme için)
+function elleBildir() {
+    for (const w of pencereler.values()) {
+        const d = durum.get(kimlik(w));
+        if (!d) { continue; }
+        if (d.elle && d.sayildi && !d.elleBildirildi) {
+            d.elleBildirildi = true;
+            const y = durduguYer(w);
+            olayBildir("elle", w, (y === "sol" || y === "sag" || y === "tam") ? { yer: y } : null);
+        } else if (!d.elle) {
+            d.elleBildirildi = false;
+        }
+    }
+}
+
+// Firefox gizli (özel tarama) penceresi: açıkken ekran parlaklığı kısılır (kullanıcı 2026-10-30).
+// Pencerenin BAŞLIĞI servise gitmez; yalnız "gizli pencere var/yok" (bool) bildirilir.
+const FF_GIZLI_DESEN = /Özel Tarama|Private Browsing|Gizli Gezinti/;
+function ffGizliGuncelle(w) {
+    try {
+        const d = kayit(w);
+        if (!w || String(programAdi(w)).indexOf("firefox") === -1) { return; }
+        const gizli = FF_GIZLI_DESEN.test(w.caption || "");
+        if (gizli === !!d.ffGizli) { return; }
+        d.ffGizli = gizli;
+        servise("ffGizli", gizli);
+    } catch (hata) { /* yut */ }
 }
 
 function hatirla(w, d) {
@@ -292,7 +350,8 @@ function kayit(w) {
             tasimaBasi: null,
             tasimaOynadi: false,
             sayildi: false,     // son dizmede yerleşim hesabına girdi mi
-            sonGrupBoyu: 0      // son dizmede masaüstündeki sayılan pencere sayısı (0: sayılmadı)
+            sonGrupBoyu: 0,     // son dizmede masaüstündeki sayılan pencere sayısı (0: sayılmadı)
+            kuralaDon: false    // (kurallı üstün) bir eş büyütülünce: bu dizmede elle sayılmaktan çık, kurala dön
         };
         durum.set(k, d);
     }
@@ -420,6 +479,16 @@ function kural(w) {
     return i === -1 ? "" : KURALLAR[i].yer;
 }
 
+// Yarı kurallı "üstün" pencere mi? (bir yarıya yerleşen: firefox=sag, konsole=sol). Kullanıcı 2026-10-31:
+// bu iki pencere "en üstün"; hep algoritmaya göre durur. Elle yerleşimleri KALICI DEĞİLDİR: bir eş
+// büyütülünce kurala geri döner (otomatiğe düşer) ki büyütme yansıması işlesin (büyüten tam ⇒ öbürü tam).
+// Kapsam bilerek dar: "tam"/"-hep"/"orta"/"yardimci"/"genel" ve kuralsız pencerelerin elle yerleşimi kalıcı
+// kalır (tam/‑hep zaten yerinde; onları çalkalamak gereksiz dokunma olurdu).
+function yarimKuralli(w) {
+    const y = kural(w);
+    return y === "sol" || y === "sag";
+}
+
 function ustunluk(w) {                                // küçük sayı = daha üstün
     const i = kuralNo(w);
     return i === -1 ? KURALLAR.length : i;
@@ -455,6 +524,19 @@ function yariDikdortgen(a, taraf) {
 
 function karsi(taraf) {
     return taraf === "sol" ? "sag" : "sol";
+}
+
+// Komşu uyumu: otomatik pencerenin, elle yerleştirilmiş pencerenin TAM bitişiğinde dolduracağı
+// dikdörtgen (aralarında boşluk/çakışma olmaz). Yer kalmazsa null (otomatik pencere yarıda kalır).
+function komsuDikdortgen(oto, elleW) {
+    const a = alan(oto);
+    const g = elleW.frameGeometry;
+    const elleSag = (g.x + g.width / 2) >= (a.x + a.width / 2);
+    const r = elleSag
+        ? { x: a.x, y: a.y, width: Math.round(g.x - a.x), height: a.height, taraf: "sol" }
+        : { x: Math.round(g.x + g.width), y: a.y,
+            width: Math.round(a.x + a.width - (g.x + g.width)), height: a.height, taraf: "sag" };
+    return r.width >= KOMSU_EN_AZ ? r : null;
 }
 
 // Pencerenin şu an durduğu yer: "tam" | "sol" | "sag" | "" (hiçbiri)
@@ -962,6 +1044,41 @@ function hesapla(liste) {
             }
         }
     }
+
+    // 4. Büyütme yansıtma (kullanıcı 2026-10-30): 2 pencere varken birini BÜYÜTTÜYSEN (maximize, tam ekran
+    //    kipi değil), öbür otomatik pencere de büyür. Böylece "biri tam olursa diğeri de tam" olur. Öbür
+    //    pencere de elle ise ona dokunulmaz (ikisini de sen yönetiyorsun).
+    if (n === 2) {
+        const buyuk = liste.filter(function (w) {
+            return sabit.has(w) && !kayit(w).tasiniyor && !w.fullScreen && w.maximizeMode === 3;
+        });
+        const otoYarim = liste.filter(function (w) {
+            return !sabit.has(w) && yer.get(w) !== "tam";
+        });
+        if (buyuk.length === 1 && otoYarim.length === 1) {
+            yer.set(otoYarim[0], "tam");
+        }
+    }
+
+    // 5. Komşu uyumu (kullanıcı 2026-10-30): 2 pencere varken biri elle/sabit (tam ekran/büyük değil), öbürü
+    //    otomatik → otomatik pencere elle pencerenin bitişiğine, kalan alanı doldurur. Böylece birini elle
+    //    boyutlayınca öbürü "ayak uydurur" ve arada boşluk kalmaz. (Sürüklenirken beklenir; iki pencere de
+    //    elle ise ikisine de dokunulmaz.)
+    if (n === 2) {
+        const elleW = liste.filter(function (w) {
+            return sabit.has(w) && !kayit(w).tasiniyor && !w.fullScreen && w.maximizeMode !== 3;
+        });
+        // yalnız yarıya düşecek (sol/sag) otomatik pencere uyar; "tam"/"orta" vb. kurallılar dokunulmaz
+        const yarim = liste.filter(function (w) {
+            return !sabit.has(w) && (yer.get(w) === "sol" || yer.get(w) === "sag");
+        });
+        if (elleW.length === 1 && yarim.length === 1) {
+            const komsu = komsuDikdortgen(yarim[0], elleW[0]);
+            if (komsu) {
+                yer.set(yarim[0], komsu);
+            }
+        }
+    }
     return { yer: yer, sabit: sabit };
 }
 
@@ -1013,8 +1130,102 @@ function yalnizTamiCoz(liste) {
     }
 }
 
+// Eş pencere kapanınca/gizlenince kalan büyüsün (kullanıcı 2026-10-31): bir masaüstünde 2 sayılan
+// pencereden biri KAPANIR/GİZLENİRSE (olaya özel, `buyusun` bayrağı) ve tek kalan pencere bir yarıya
+// elle yaslanmışsa, onu OTOMATİĞE düşür ki tam ekran olsun (ve sonra yeni pencere gelince yine bölünsün).
+// Boşta ya da yeniden yüklemede tetiklenmez; tek başına yarıya yaslamayı bozmaz.
+function yalnizKalinca(liste) {
+    if (liste.length !== 1) {
+        return;
+    }
+    const w = liste[0];
+    const d = kayit(w);
+    if (d.buyusun && d.elle && !d.tasiniyor && !w.fullScreen
+            && (durduguYer(w) === "sol" || durduguYer(w) === "sag")) {
+        d.elle = false;
+        d.yalnizBuyudu = true;                            // iz (sınama/rapor): yalnız kalınca otomatiğe döndü
+        if (dosendiMi(w)) {
+            degistir(function () { doseyiBirak(w); });    // döşemeyi bırak: dosenenleriIsaretle tekrar elle saymasın
+        }
+    }
+    d.buyusun = false;                                    // tek atış: tüketildi
+}
+
+// Sayılan bir pencere kapandı/gizlendi: aynı ekran+masaüstünde tek sayılan pencere kaldıysa, bir sonraki
+// dizmede büyüsün diye işaretle (yalnız bu olaya özel). w artık sayılmaz (silinmiş ya da simge durumunda).
+function esAyrildi(w) {
+    try {
+        const ekran = w.output;
+        const masa = (w.desktops && w.desktops.length) ? w.desktops[0] : null;
+        const kalan = [];
+        for (const o of pencereler.values()) {
+            if (o === w || o.deleted || !sayilir(o)) {
+                continue;
+            }
+            const m = (o.desktops && o.desktops.length) ? o.desktops[0] : null;
+            if (o.output === ekran && m === masa) {
+                kalan.push(o);
+            }
+        }
+        if (kalan.length === 1) {
+            kayit(kalan[0]).buyusun = true;
+        }
+    } catch (hata) {
+        // ekran/masaüstü okunamadı: büyütme atlanır
+    }
+}
+
+// Bir pencerede büyütme/geri alma oldu: aynı ekran+masaüstündeki kurallı ÜSTÜN EŞLERİ "kurala dön" ile
+// işaretle. Olayı yapan pencereye (w) dokunulmaz: onun o anki durumu (büyük/elle) korunur; yalnız eşleri
+// kurala döner ki büyütme yansıması işlesin (büyüten tam ⇒ öbürü de tam), eş elle yaslanmış olsa bile.
+function eslereKuralaDon(w) {
+    let ekran, masa;
+    try {
+        ekran = w.output;
+        masa = (w.desktops && w.desktops.length) ? w.desktops[0] : null;
+    } catch (hata) {
+        return;
+    }
+    for (const o of pencereler.values()) {
+        if (o === w || o.deleted || !sayilir(o) || !yarimKuralli(o)) {
+            continue;
+        }
+        try {
+            const m = (o.desktops && o.desktops.length) ? o.desktops[0] : null;
+            if (o.output !== ekran || m !== masa) {
+                continue;
+            }
+        } catch (hata) {
+            continue;
+        }
+        kayit(o).kuralaDon = true;
+    }
+}
+
+// "Kurala dön" ile işaretlenen kurallı üstün pencereler bu dizmede elle sayılmaktan çıkar (manuel yerleşim
+// "o an içindi"; artık kurala/otomatiğe dönerler). Sürüklenen, tam ekran ya da ŞU AN büyütülmüş olana
+// dokunulmaz (onu geri almayız). Döşenmişse döşeme bırakılır ki dosenenleriIsaretle tekrar elle saymasın.
+function kuralaDonenleriCoz(liste) {
+    for (const w of liste) {
+        const d = kayit(w);
+        if (!d.kuralaDon) {
+            continue;
+        }
+        d.kuralaDon = false;                                  // tek atış: tüketildi
+        if (d.elle && !d.tasiniyor && !w.fullScreen && w.maximizeMode !== 3 && yarimKuralli(w)) {
+            d.elle = false;
+            d.kuralaDondu = true;                             // iz (sınama/rapor)
+            if (dosendiMi(w)) {
+                degistir(function () { doseyiBirak(w); });
+            }
+        }
+    }
+}
+
 function uygula(liste) {
+    kuralaDonenleriCoz(liste);
     yalnizTamiCoz(liste);
+    yalnizKalinca(liste);
     for (const w of liste) {
         kayit(w).sonGrupBoyu = liste.length;
     }
@@ -1026,12 +1237,14 @@ function uygula(liste) {
         }
         const y = sonuc.yer.get(w);
         const a = alan(w);
-        d.yer = y;
+        d.yer = (typeof y === "string") ? y : (y ? y.taraf : "");
         if (y === "tam") {
             tamYap(w, d);
         } else if (y === "sol" || y === "sag") {
             const hedef = yariDikdortgen(a, y);
             yereKoy(w, d, hedef, y + ":" + anahtar(hedef));
+        } else if (y && typeof y === "object") {
+            yereKoy(w, d, y, "komsu:" + anahtar(y));       // komşu uyumu: bitişik dikdörtgen
         }
     }
 }
@@ -1088,6 +1301,7 @@ function hepsiniDiz() {
         }
     }
     ozelGecis();
+    try { elleBildir(); } catch (hata) { /* yut */ }
 }
 
 // ── Elle müdahale ──────────────────────────────────────────────────────────────────────────────
@@ -1125,6 +1339,7 @@ function buyutmeIstendi(w) {
         dogrula();
         return;
     }
+    eslereKuralaDon(w);   // kurallı üstün eşler kurala dönsün (yansıma elle yaslı eşte de işlesin)
     elleYap(d);
 }
 
@@ -1140,6 +1355,57 @@ function doseDegisti(w) {
     }
     if (dosendiMi(w)) {
         elleYap(d);                                   // zaten elle olsa da yeri değişti: öbürleri yeniden dizilsin
+    }
+}
+
+// Aynı masaüstü + aynı ekranda mı? (odak taşıması yalnız yan yana görünebilecek pencereler içindir)
+function ayniYerde(a, b) {
+    try {
+        const ma = a.desktops && a.desktops.length ? a.desktops[0] : null;
+        const mb = b.desktops && b.desktops.length ? b.desktops[0] : null;
+        return a.output === b.output && ma === mb;
+    } catch (hata) {
+        return false;
+    }
+}
+
+// Bir pencereyi doğrudan (eşzamanlı, tek atış) ekranın bir yarısına koyar ve elle sayar. Kalıcı bayrak
+// bırakmaz; böylece boşta yeniden dizme bu pencereyi oynatmaz (fuzzer kararlılık değişmezi korunur).
+function karsiTarafaKoy(w, taraf) {
+    const d = kayit(w);
+    const h = yariDikdortgen(alan(w), taraf);
+    degistir(function () {
+        if (w.maximizeMode !== 0) {
+            w.setMaximize(false, false);
+        }
+        doseyiBirak(w);
+        w.frameGeometry = { x: h.x, y: h.y, width: h.width, height: h.height };
+    });
+    d.elle = true;
+    d.yer = taraf;
+    if (kuralNo(w) === -1) {
+        d.taraf = taraf;
+    }
+    izlePlanla();
+}
+
+// Odak değişti (alt-tab vb.): öne gelen pencere, bir önce kullandığım pencereyle AYNI yarıya döşenmişse
+// karşı yarıya geçsin ki ikisi yan yana görünsün. Kullandığım pencere yerinde kalır, öne gelen taşınır.
+// (Kullanıcı 2026-10-31 "yalnız odak değişince" seçti.) Yalnız ikisi de yarıya döşenmiş ve aynı yerdeyse.
+function odakDegisti(w) {
+    const yeni = (w && ilgili(w)) ? kimlik(w) : null;
+    const once = sonEtkin;
+    sonEtkin = yeni;
+    if (!yeni || !once || once === yeni) {
+        return;
+    }
+    const o = pencereler.get(once);
+    if (!o || o.deleted || w.deleted || !ilgili(w) || !ilgili(o) || !ayniYerde(w, o)) {
+        return;
+    }
+    const yw = durduguYer(w);
+    if ((yw === "sol" || yw === "sag") && durduguYer(o) === yw) {
+        karsiTarafaKoy(w, karsi(yw));                     // öne gelen, kullandığımın karşısına (doğrudan)
     }
 }
 
@@ -1251,7 +1517,7 @@ function bagla(w) {
         ["tileChanged", function () { doseDegisti(w); }],
         // büyütme GERÇEKLEŞİNCE (pencere yanıt verince) öbürlerini güncel duruma göre yeniden değerlendir
         ["maximizedChanged", function () { planla(); }],
-        ["minimizedChanged", function () { planla(); }],
+        ["minimizedChanged", function () { if (w.minimized && kayit(w).sayildi) { esAyrildi(w); } planla(); }],
         ["desktopsChanged", function () { planla(); }],
         ["activitiesChanged", function () { planla(); }],
         ["outputChanged", function () { planla(); }],
@@ -1261,6 +1527,7 @@ function bagla(w) {
         ["transientChanged", function () { baglantiDegisti(w); }],
         ["windowClassChanged", function () { sinifDegisti(w); }],
         ["desktopFileNameChanged", function () { sinifDegisti(w); }],
+        ["captionChanged", function () { ffGizliGuncelle(w); }],
         ["frameGeometryChanged", izlePlanla]
     ];
     for (const s of sinyaller) {
@@ -1297,6 +1564,8 @@ function pencereEklendi(w) {
         return;
     }
     yardimciKararVer(w, d);
+    olayBildir("ac", w, null);
+    ffGizliGuncelle(w);
     if (hatiradanKoy(w, d)) {
         planla();                                     // öbürleri bu pencereye göre yerleşsin
         return;
@@ -1307,13 +1576,19 @@ function pencereEklendi(w) {
 
 function pencereKaldirildi(w) {
     const k = kimlik(w);
+    if (k === sonEtkin) { sonEtkin = null; }
     pencereler.delete(k);
     const d = durum.get(k);
     if (!d) {
         return;
     }
+    if (d.ffGizli) { servise("ffGizli", false); d.ffGizli = false; }
+    if (d.sayildi) { olayBildir("kapat", w, null); }
     hatirla(w, d);
     durum.delete(k);
+    if (d.sayildi) {
+        esAyrildi(w);                                 // tek sayılan pencere kaldıysa kapanınca büyüsün
+    }
     if (yardimcilariDevret(k) || d.sayildi) {
         planla(KAPANIS_BEKLEME);                      // yer açıldı: kalanlar yeniden dizilsin
     }
@@ -1487,7 +1762,7 @@ function disariYaz(metin) {
 }
 
 function rapor() {
-    let m = "TRSDIZEN surum=3 kural=" + KURALLAR.length + " haric=" + HARIC.length
+    let m = "TRSDIZEN surum=4 kural=" + KURALLAR.length + " haric=" + HARIC.length
         + " diz=" + sayaclar.diz + " islem=" + sayaclar.islem;
     for (const w of workspace.windowList()) {
         if (!(w.normalWindow || w.dialog) || w.popupWindow) {
@@ -1552,6 +1827,11 @@ for (const ad of ["SifirlaIste", "RaporIste", "DevirIste"]) {
 
 workspace.windowAdded.connect(korumali(pencereEklendi, "eklendi"));
 workspace.windowRemoved.connect(korumali(pencereKaldirildi, "kaldırıldı"));
+try {
+    workspace.windowActivated.connect(korumali(odakDegisti, "odak"));
+} catch (hata) {
+    // bu KWin sürümünde yok: odak taşıması çalışmaz, ötekiler sürer
+}
 for (const ad of ["screensChanged", "desktopsChanged", "virtualScreenSizeChanged", "activitiesChanged", "currentActivityChanged"]) {
     try {
         workspace[ad].connect(function () { planla(); });

@@ -1,0 +1,22 @@
+[Unit]
+Description=TRS pencere yardımcısı (trs-dizen için olay kaydı, sayımla öğrenme, Firefox gizli pencerede parlaklık)
+PartOf=graphical-session.target
+After=plasma-kwin_wayland.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -B %h/.local/share/trs-pencere/trs-pencere.py --servis
+Restart=on-failure
+RestartSec=3
+# yalnız kullanıcı dosyaları + session D-Bus; sistem geneline dokunmaz
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/trs-dizen %h/.config/trs
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryMax=80M
+Nice=5
+
+[Install]
+WantedBy=graphical-session.target

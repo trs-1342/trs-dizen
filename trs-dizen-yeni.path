@@ -1,0 +1,13 @@
+[Unit]
+Description=TRS Dizen: program kurulumlarını izle (.desktop dizinleri)
+
+[Path]
+PathChanged=/usr/share/applications
+PathChanged=/usr/local/share/applications
+PathChanged=/var/lib/flatpak/exports/share/applications
+PathChanged=%h/.local/share/applications
+PathChanged=%h/.local/share/flatpak/exports/share/applications
+Unit=trs-dizen-yeni.service
+
+[Install]
+WantedBy=default.target

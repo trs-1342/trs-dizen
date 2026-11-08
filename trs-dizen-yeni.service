@@ -1,0 +1,9 @@
+[Unit]
+Description=TRS Dizen: yeni kurulan programları bul ve nasıl yerleşeceğini sor
+# trs-dizen-yeni.path tetikler (.desktop dizinleri değişince). 2026-11-02: 10-23 çöp kazasında kaybolmuştu, yeniden yazıldı.
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/trs-dizen yeni
+# sorular bildirimle sorulur (45 sn, paralel); toplu kurulumda uzun sürebilir: 90 sn varsayılanına takılmasın
+TimeoutStartSec=15min

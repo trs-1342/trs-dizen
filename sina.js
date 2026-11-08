@@ -31,7 +31,7 @@ class Sinyal {
 const PENCERE_SINYALLERI = ["interactiveMoveResizeStarted", "interactiveMoveResizeStepped", "interactiveMoveResizeFinished",
     "maximizedAboutToChange", "maximizedChanged", "quickTileModeChanged", "tileChanged", "minimizedChanged", "desktopsChanged",
     "activitiesChanged", "outputChanged", "fullScreenChanged", "keepAboveChanged", "skipTaskbarChanged", "transientChanged",
-    "windowClassChanged", "desktopFileNameChanged", "frameGeometryChanged"];
+    "windowClassChanged", "desktopFileNameChanged", "frameGeometryChanged", "captionChanged"];
 
 function rastgeleUret(tohum) {                         // mulberry32: tohumdan yinelenebilir sayılar
     let a = tohum >>> 0;
@@ -82,7 +82,8 @@ class Ortam {
             activeScreen: this.ekranlar[0],
             windowList() { return o.pencereler.slice(); },
             clientArea(tur, ekran, masaustu) { const a = ekran.alan; return { x: a.x, y: a.y, width: a.width, height: a.height }; },
-            windowAdded: new Sinyal(), windowRemoved: new Sinyal(),
+            windowAdded: new Sinyal(), windowRemoved: new Sinyal(), windowActivated: new Sinyal(),
+            activeWindow: null,
             screensChanged: new Sinyal(), desktopsChanged: new Sinyal(), virtualScreenSizeChanged: new Sinyal()
         };
         this.options = { configChanged: new Sinyal() };
@@ -166,6 +167,8 @@ class Ortam {
         const w = this.ac({ sinif: "ipucu", normal: false, geo: { x: 500, y: 500, width: 200, height: 30 } });
         this.kapat(w);
     }
+
+    odakla(w) { this.workspace.activeWindow = w || null; this.workspace.windowActivated.emit(w || null); }
 
     alan(w) { return w.output.alan; }
     yer(w) {
@@ -309,6 +312,7 @@ class Pencere {
     // programın kendi yaptıkları
     pBoyut(g) { this._geoKoy(g); }
     pSinif(sinif) { this.resourceClass = sinif; this.windowClassChanged.emit(); }
+    pBaslik(baslik) { this.caption = baslik; this.captionChanged.emit(); }
     pDosya(dosya) { this.desktopFileName = dosya; this.desktopFileNameChanged.emit(); }
 }
 
@@ -395,9 +399,9 @@ senaryo("Discord ortada küçük açılır, sayılmaz, sonra dokunulmaz", functi
     esit(d._geo.width, Math.round(1920 * 0.58), "discord eni");
     const islem = d.betikIslem; o.ac(FF); o.otur(); esit(d.betikIslem, islem, "discord'a sonradan dokunuldu");
 });
-senaryo("elle büyütülen Firefox büyük kalır; terminal solda kalır; yeni pencere açılınca da bozulmaz", function () {
+senaryo("elle büyütülen Firefox büyük kalır; (2 pencere) terminal de büyür; üçüncü pencere gelince terminal yarıya döner, Firefox'a dokunulmaz", function () {
     const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
-    f.kBuyut(); o.otur(); esit(o.yer(f), "tam", "firefox"); esit(o.yer(t), "sol", "konsole"); bekle(o.kayit(f).elle, "elle işareti yok");
+    f.kBuyut(); o.otur(); esit(o.yer(f), "tam", "firefox"); esit(o.yer(t), "tam", "terminal de büyümeli (yansıtma)"); bekle(o.kayit(f).elle, "elle işareti yok");
     const islem = f.betikIslem; o.ac(KATE); o.otur(); esit(o.yer(f), "tam", "firefox yeni pencereden sonra"); esit(f.betikIslem, islem, "elle pencereye dokunuldu");
 });
 senaryo("ipucu çıktıktan hemen sonra yapılan elle büyütme kaybolmaz (Eclipse'te görülen hata)", function () {
@@ -448,7 +452,195 @@ senaryo("pencereyi tutup bırakmak (oynatmadan) elle sayılmaz; taşımak sayıl
     const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
     t.kTutBirak(); o.otur(); bekle(!o.kayit(t).elle, "tutup bırakma elle sayıldı");
     t.kTasi({ x: 100, y: 100, width: 700, height: 500 }); o.otur(); bekle(o.kayit(t).elle, "taşıma elle sayılmadı");
-    esit(o.yer(t), "ozel", "konsole"); esit(o.yer(f), "sag", "firefox");
+    esit(o.yer(t), "ozel", "konsole");
+    // komşu uyumu: firefox, t'nin (sol yarıda) bitişiğine geçer; arada boşluk kalmaz
+    const a = o.alan(f), gf = f._geo, gt = t._geo;
+    bekle(Math.abs(gf.x - (gt.x + gt.width)) <= 2, "firefox t'nin sağ bitişiğinde değil: " + gf.x + " vs " + (gt.x + gt.width));
+    bekle(Math.abs((gf.x + gf.width) - (a.x + a.width)) <= 2 && Math.abs(gf.height - a.height) <= 2, "firefox kalan alanı doldurmadı");
+});
+
+senaryo("komşu uyumu: Firefox'u elle genişletince terminal bitişikte kalır, boşluk olmaz", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    esit(o.yer(f), "sag", "firefox"); esit(o.yer(t), "sol", "terminal");
+    const a = o.alan(f);
+    // Firefox'u sola doğru genişlet (iç kenarı 0.4 noktasına): sağ yarıda kalır ama %60 genişlikte
+    f.kTasi({ x: a.x + Math.round(a.width * 0.4), y: a.y, width: Math.round(a.width * 0.6), height: a.height });
+    o.otur();
+    bekle(o.kayit(f).elle, "firefox elle sayılmadı");
+    const gf = f._geo, gt = t._geo;
+    bekle(Math.abs((gt.x + gt.width) - gf.x) <= 2, "terminal firefox'a bitişik değil (boşluk/çakışma): " + (gt.x + gt.width) + " vs " + gf.x);
+    bekle(Math.abs(gt.x - a.x) <= 2 && Math.abs(gt.height - a.height) <= 2, "terminal sol kenardan tam boy doldurmadı");
+    const genislikToplam = gt.width + gf.width;
+    bekle(Math.abs(genislikToplam - a.width) <= 3, "iki pencere ekranı tam doldurmadı: " + genislikToplam);
+});
+
+senaryo("komşu uyumu: elle pencere büyüdükçe/küçüldükçe öbürü her seferinde uyar", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    const a = o.alan(f);
+    for (const oran of [0.7, 0.3, 0.55]) {
+        f.kTasi({ x: a.x + Math.round(a.width * (1 - oran)), y: a.y, width: Math.round(a.width * oran), height: a.height });
+        o.otur();
+        const gf = f._geo, gt = t._geo;
+        bekle(Math.abs((gt.x + gt.width) - gf.x) <= 2, "oran " + oran + ": bitişik değil");
+        bekle(Math.abs(gt.x - a.x) <= 2, "oran " + oran + ": sol kenarda değil");
+    }
+});
+
+senaryo("komşu uyumu: 'tam' kurallı pencereye uygulanmaz (Android Studio hep tam kalır)", function () {
+    const o = new Ortam(); const s = o.ac(AS); const t = o.ac(KON); o.otur();
+    esit(o.yer(s), "tam", "android studio tam kurallı"); // AS: her zaman tam
+    t.kTasi({ x: 100, y: 100, width: 700, height: 500 }); o.otur();
+    esit(o.yer(s), "tam", "android studio komşu uyumuna girmemeli, tam kalmalı");
+});
+
+senaryo("komşu uyumu: iki pencere de elle ise ikisine de dokunulmaz", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    f.kTasi({ x: 300, y: 100, width: 800, height: 600 }); o.otur();
+    const fi = f.betikIslem;
+    t.kTasi({ x: 50, y: 50, width: 600, height: 400 }); o.otur();
+    bekle(o.kayit(f).elle && o.kayit(t).elle, "ikisi de elle değil");
+    esit(f.betikIslem, fi, "ikisi de elle iken firefox'a dokunuldu");
+});
+
+senaryo("büyütme yansıtma: 2 pencere, birini büyütünce öbürü de büyür", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    esit(o.yer(f), "sag", "firefox"); esit(o.yer(t), "sol", "terminal");
+    o.ilerle(2000); f.kBuyut(); o.otur();
+    esit(o.yer(f), "tam", "firefox büyüdü"); esit(o.yer(t), "tam", "terminal de büyümeli");
+    bekle(o.kayit(f).elle, "firefox elle sayılmadı");
+});
+
+senaryo("büyütme yansıtma: büyütmeyi geri alınca öbürü de yarıya döner", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    o.ilerle(2000); f.kBuyut(); o.otur(); esit(o.yer(t), "tam", "önce terminal büyümeli");
+    f.kKucult(); o.otur();
+    esit(t.maximizeMode, 0, "büyütme kalkınca terminal de büyük kalmamalı");
+});
+
+senaryo("büyütme yansıtma: öbür (kurallı üstün) pencere elle yaslı olsa bile büyür — elle kalıcı değil", function () {
+    // Kullanıcı 2026-10-31: firefox/konsole hep algoritmaya göre durur; elle yerleşim "o an içindir".
+    // Terminal'i elle bir yere koysan da, firefox büyüyünce terminal kurala döner ve yansımaya katılır.
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    o.ilerle(2000);
+    t.kTasi({ x: 60, y: 60, width: 600, height: 400 }); o.otur(); bekle(o.kayit(t).elle, "terminal elle değil");
+    f.kBuyut(); o.otur();
+    esit(o.yer(f), "tam", "firefox büyüdü"); esit(o.yer(t), "tam", "elle terminal de büyümeli (kurala döndü, yansıdı)");
+    bekle(!o.kayit(t).elle, "terminal hâlâ elle sayılıyor (kurala dönmeliydi)");
+});
+
+senaryo("büyütme yansıtma: KURALSIZ elle pencere yansımaya KATILMAZ (yalnız kurallı üstünler döner)", function () {
+    // Kuralsız pencerenin elle yerleşimi kalıcıdır: firefox büyüse de ona dokunulmaz, kurala dönmez.
+    const o = new Ortam(); const f = o.ac(FF); const z = o.ac({ sinif: "z" }); o.otur();
+    o.ilerle(2000);
+    z.kTasi({ x: 60, y: 60, width: 600, height: 400 }); o.otur(); bekle(o.kayit(z).elle, "z elle değil");
+    const zi = z.betikIslem; f.kBuyut(); o.otur();
+    esit(o.yer(f), "tam", "firefox büyüdü"); esit(z.maximizeMode, 0, "kuralsız/elle z büyütülmemeli");
+    esit(z.betikIslem, zi, "kuralsız/elle z'ye dokunuldu"); bekle(o.kayit(z).elle, "z elle kalmalıydı");
+});
+
+senaryo("büyütme yansıtma: 3 pencere varken yansımaz (yalnız 2 pencerede)", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); const k = o.ac(KATE); o.otur();
+    o.ilerle(2000); f.kBuyut(); o.otur();
+    esit(o.yer(f), "tam", "firefox büyük");
+    bekle(o.yer(t) === "sol" || o.yer(t) === "sag", "3 pencerede terminal yarıya gitmeli, tam değil: " + o.yer(t));
+    esit(t.maximizeMode, 0, "3 pencerede öbürü büyümemeli");
+});
+
+senaryo("takas: elle yaslanınca otomatik öbürü karşıya geçer (üst üste binmez)", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    esit(o.yer(f), "sag", "firefox"); esit(o.yer(t), "sol", "terminal");
+    f.kYasla("sol"); o.otur();                                       // firefox'u terminalin olduğu sola yasla
+    bekle(o.yer(f) !== o.yer(t), "üst üste binmemeli");
+    esit(o.yer(f), "sol", "firefox yasladığım yerde (sol)");
+    esit(o.yer(t), "sag", "terminal karşıya (sağ) geçmeli");
+});
+
+senaryo("serbest sürüklenmiş (yaslanmamış) iki elle pencere zorla ayrılmaz", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    f.kTasi({ x: 300, y: 100, width: 700, height: 500 }); o.otur();  // sol bölgede ama yarıya DÖŞENMEMİŞ
+    const fi = f.betikIslem;
+    t.kTasi({ x: 60, y: 60, width: 600, height: 400 }); o.otur();    // o da sol bölgede, serbest
+    bekle(o.kayit(f).elle && o.kayit(t).elle, "ikisi de elle değil");
+    esit(f.betikIslem, fi, "serbest pencere takasa zorlandı");
+});
+
+senaryo("odak taşıması: alt-tab ile öne gelen, kullandığımla aynı yarıdaysa karşıya geçer", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); const x = o.ac(KATE); o.otur();
+    f.kYasla("sol"); x.kYasla("sol"); t.kYasla("sag"); o.otur();     // f ve x solda, t sağda
+    o.odakla(f); o.otur();                                           // firefox'u kullanıyorum (sol)
+    o.odakla(x); o.otur();                                           // alt-tab: x öne geldi (o da sol)
+    esit(o.yer(x), "sag", "öne gelen x karşıya (sağ) geçmeli");
+    esit(o.yer(f), "sol", "kullandığım firefox yerinde (sol) kalmalı");
+});
+
+senaryo("odak taşıması: öne gelen zaten karşı yarıdaysa taşınmaz", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); const x = o.ac(KATE); o.otur();
+    f.kYasla("sol"); x.kYasla("sag"); t.kYasla("sag"); o.otur();
+    o.odakla(f); o.otur(); const xi = x.betikIslem;
+    o.odakla(x); o.otur();
+    esit(o.yer(x), "sag", "x zaten sağda kalmalı");
+    esit(x.betikIslem, xi, "zaten karşıdaki x'e dokunulmamalı");
+});
+
+senaryo("odak taşıması: tek çift (2 pencere) karşılıklıysa alt-tab bir şey bozmaz", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    const fi = f.betikIslem, ti = t.betikIslem;
+    o.odakla(t); o.otur(); o.odakla(f); o.otur();
+    esit(o.yer(f), "sag", "firefox"); esit(o.yer(t), "sol", "terminal");
+    esit(f.betikIslem, fi, "firefox'a gereksiz dokunuldu"); esit(t.betikIslem, ti, "terminal'e gereksiz dokunuldu");
+});
+
+senaryo("yalnız kalınca büyür: elle yaslı terminal, firefox kapanınca tam olur ve yeni pencerede yine bölünür", function () {
+    const o = new Ortam(); const t = o.ac(KON); const f = o.ac(FF); o.otur();
+    t.kYasla("sol"); o.otur(); bekle(o.kayit(t).elle, "terminal elle değil");
+    o.kapat(f); o.otur(); esit(o.yer(t), "tam", "eş kapanınca kalan terminal tam olmalı");
+    bekle(!o.kayit(t).elle, "terminal otomatiğe dönmeli (yeniden bölünebilsin)");
+    const k = o.ac(KATE); o.otur(); bekle(o.yer(t) !== "tam" && o.yer(k) !== "tam", "yeni pencere gelince yine bölünmeli");
+});
+
+senaryo("yalnız kalınca büyür: eş GİZLENİNCE (minimize) de kalan tam olur, geri gelince bölünür", function () {
+    const o = new Ortam(); const t = o.ac(KON); const f = o.ac(FF); o.otur();
+    t.kYasla("sol"); o.otur();
+    f.kSimge(true); o.otur(); esit(o.yer(t), "tam", "eş gizlenince kalan terminal tam olmalı");
+    f.kSimge(false); o.otur(); bekle(o.yer(t) !== "tam" && o.yer(f) !== "tam", "firefox geri gelince yine bölünmeli");
+});
+
+senaryo("yalnız kalınca büyür: TEK BAŞINA yarıya yaslamayı bozmaz (eş ayrılmadıysa büyümez)", function () {
+    const o = new Ortam(); const t = o.ac(KON); o.otur();
+    t.kYasla("sag"); o.otur(); esit(o.yer(t), "sag", "tek başına yaslanan pencere yarıda kalmalı, büyümemeli");
+    bekle(o.kayit(t).elle, "tek başına yaslama elle kalmalı");
+});
+
+senaryo("Firefox gizli pencere: açılınca ffGizli(true), özel taramadan çıkınca ffGizli(false)", function () {
+    const o = new Ortam();
+    const ff = function () { return o.dbus.filter(function (c) { return c[0] === "net.trs.Pencere" && c[3] === "ffGizli"; }).map(function (c) { return c[4]; }); };
+    const f = o.ac({ sinif: "org.mozilla.firefox", baslik: "Google — Mozilla Firefox" }); o.otur();
+    esit(ff().length, 0, "normal pencerede gizli bildirimi olmamalı");
+    f.pBaslik("Bir sayfa — Mozilla Firefox Özel Tarama"); o.otur();
+    esit(ff().pop(), true, "gizli açıldı bildirilmedi");
+    f.pBaslik("Google — Mozilla Firefox"); o.otur();
+    esit(ff().pop(), false, "gizliden çıkış bildirilmedi");
+});
+
+senaryo("Firefox gizli pencere kapanınca ffGizli(false) (parlaklık geri döner)", function () {
+    const o = new Ortam();
+    const ff = function () { return o.dbus.filter(function (c) { return c[0] === "net.trs.Pencere" && c[3] === "ffGizli"; }).map(function (c) { return c[4]; }); };
+    const f = o.ac({ sinif: "org.mozilla.firefox", baslik: "x — Mozilla Firefox Private Browsing" }); o.otur();
+    esit(ff().pop(), true, "açılışta gizli bildirilmedi");
+    o.kapat(f); o.otur();
+    esit(ff().pop(), false, "kapanışta geri bildirilmedi");
+});
+
+senaryo("olay bildirimi: açılınca 'ac', elle yapınca 'elle' (yer ile), kapanınca 'kapat'", function () {
+    const o = new Ortam();
+    const olay = function () { return o.dbus.filter(function (c) { return c[0] === "net.trs.Pencere" && c[3] === "olay"; }).map(function (c) { return JSON.parse(c[4]); }); };
+    const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    bekle(olay().some(function (k) { return k.tur === "ac" && k.prog.indexOf("firefox") >= 0; }), "'ac' bildirilmedi");
+    t.kTasi({ x: 100, y: 100, width: 700, height: 500 }); o.otur();
+    const elleler = olay().filter(function (k) { return k.tur === "elle" && k.prog.indexOf("konsole") >= 0; });
+    bekle(elleler.length >= 1, "'elle' bildirilmedi");
+    o.kapat(t); o.otur();
+    bekle(olay().some(function (k) { return k.tur === "kapat"; }), "'kapat' bildirilmedi");
 });
 senaryo("kenara yaslama elle sayılır ve öbür pencere karşıya yerleşir", function () {
     const o = new Ortam(); const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
@@ -548,7 +740,7 @@ senaryo("betik yeniden yüklenince hiçbir pencere oynamaz; uymayanlar elle say�
     o.betikYukle(); o.otur();
     o.pencereler.forEach(function (w, i) { esit(w.betikIslem, once[i], "yeniden yüklemede dokunuldu: " + w.resourceClass); });
     bekle(o.kayit(f).elle, "elle büyütülmüş firefox yönetilen sayıldı"); bekle(!o.kayit(t).elle, "konsole elle sayıldı");
-    o.kapat(k); o.otur(); esit(o.yer(f), "tam", "firefox"); esit(o.yer(t), "sol", "konsole yönetilmeye devam etmeli");
+    o.kapat(k); o.otur(); esit(o.yer(f), "tam", "firefox"); esit(o.yer(t), "tam", "konsole yönetilmeye devam etmeli (2 pencere kalınca büyütme yansır)");
 });
 senaryo("sıfırlama elle işaretlerini siler ve baştan dizer", function () {
     const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
@@ -557,8 +749,10 @@ senaryo("sıfırlama elle işaretlerini siler ve baştan dizer", function () {
 });
 senaryo("durum raporu istenince gönderilir, başka zaman gönderilmez", function () {
     const o = new Ortam(); o.ac(FF); o.otur();
-    o.options.configChanged.emit(); esit(o.dbus.length, 0, "istenmeden rapor");
-    o.ayarDegistir("RaporIste", "abc"); esit(o.dbus.length, 1, "rapor"); bekle(String(o.dbus[0][4]).indexOf("org.mozilla.firefox") !== -1, "raporda pencere yok");
+    o.options.configChanged.emit();
+    const rapHesap = function () { return o.dbus.filter(function (c) { return c[0] === "org.freedesktop.DBus"; }); };
+    esit(rapHesap().length, 0, "istenmeden rapor");
+    o.ayarDegistir("RaporIste", "abc"); esit(rapHesap().length, 1, "rapor"); bekle(String(rapHesap()[0][4]).indexOf("org.mozilla.firefox") !== -1, "raporda pencere yok");
 });
 senaryo("geç yanıt veren pencereler (800 ms) yanlışlıkla elle sayılmaz ve doğru yere oturur", function () {
     const o = new Ortam({ gecikme: 800 }); const f = o.ac(FF); const t = o.ac(KON); o.otur(); const k = o.ac(KATE); o.otur(); o.otur();
@@ -658,9 +852,9 @@ senaryo("hatıra: elle yerleştirilip kapanan program (tepsiye kapanan Discord) 
     esit(JSON.stringify(d2._geo), JSON.stringify(yer), "discord yeri"); bekle(o.kayit(d2).elle, "elle işareti yok");
     const islem = d2.betikIslem; o.ac(FF); o.otur(); esit(d2.betikIslem, islem, "hatıradan konan pencereye sonradan dokunuldu");
 });
-senaryo("hatıra: elle büyütülüp kapanan Firefox yeniden büyük açılır, terminal solda kalır", function () {
+senaryo("hatıra: elle büyütülüp kapanan Firefox yeniden büyük açılır; 2 pencere olunca terminal de büyür", function () {
     const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur(); f.kBuyut(); o.otur(); o.kapat(f); o.otur();
-    const f2 = o.ac(FF); o.otur(); hatasiz(o); esit(o.yer(f2), "tam", "firefox"); esit(o.yer(t), "sol", "konsole");
+    const f2 = o.ac(FF); o.otur(); hatasiz(o); esit(o.yer(f2), "tam", "firefox"); esit(o.yer(t), "tam", "konsole (büyütme yansıması)");
 });
 senaryo("yalnızken tam: hatıradan büyük açılan Firefox'un yanına Sublime gelince bölünür (Sublime sol, Firefox sağ)", function () {
     const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur(); f.kBuyut(); o.otur(); o.kapat(f); o.kapat(t); o.otur();
@@ -862,7 +1056,8 @@ senaryo("yeniden yükleme (devirli): elle işaretleri, kurala uygun yerde duran 
     const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur(); f.kYasla("sag"); o.otur(); bekle(o.kayit(f).elle, "ön koşul");
     const once = [f.betikIslem, t.betikIslem]; o.betikYukle(true); o.otur();
     bekle(o.kayit(f).elle, "elle işareti yeniden yüklemede kayboldu"); esit(f.betikIslem, once[0], "firefox"); esit(t.betikIslem, once[1], "konsole");
-    o.kapat(t); o.otur(); esit(o.yer(f), "sag", "elle yaslanmış firefox büyütüldü");
+    // eş (konsole) kapanınca kalan elle pencere büyür (kullanıcı 2026-10-31): yarım kalmaz, tam olur
+    o.kapat(t); o.otur(); esit(o.yer(f), "tam", "eş kapanınca kalan firefox tam olmalı");
 });
 senaryo("yeniden yükleme (devirli): seçilmiş yarılar, yardımcılar ve açılış sırası korunur", function () {
     const o = new Ortam(); const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); const c = o.ac({ sinif: "c" }); o.otur();
@@ -900,7 +1095,7 @@ senaryo("saçma oranlı kural (eksi, 4 kat) yok sayılır; '~' içinde arar; 'ge
 });
 senaryo("durum raporu bağlı pencereyi ve sayılmama nedenini gösterir", function () {
     const o = new Ortam(); const f = o.ac(FF); o.ac({ sinif: "x", ana: f }); o.ac({ sinif: "y", ustte: true }); o.otur();
-    o.ayarDegistir("RaporIste", "r"); const m = String(o.dbus[o.dbus.length - 1][4]);
+    o.ayarDegistir("RaporIste", "r"); const rap = o.dbus.filter(function (c) { return c[0] === "org.freedesktop.DBus"; }); const m = String(rap[rap.length - 1][4]);
     bekle(m.indexOf("HAYIR(bagli,izliyor)") !== -1 && m.indexOf("HAYIR(ustte)") !== -1 && m.indexOf("surum=3") !== -1, "rapor eksik: " + m);
 });
 
@@ -921,10 +1116,27 @@ function degismezler(o, dokunulmaz, adim, uzaklik) {
     for (const liste of gruplar.values()) {
         const yarilar = { sol: 0, sag: 0 };
         let oynatilabilir = 0;
+        // komşu uyumu: 2 pencereden biri elle, öbürü onun TAM bitişiğinde (boşluk/çakışma yok) olabilir
+        const komsuMu = function (w, m, a) {
+            const g = w._geo, mg = m._geo;
+            const tam = Math.abs(g.y - a.y) <= 2 && Math.abs(g.height - a.height) <= 2;
+            if (!tam) { return false; }
+            const mSag = (mg.x + mg.width / 2) >= (a.x + a.width / 2);
+            return mSag
+                ? Math.abs(g.x - a.x) <= 2 && Math.abs((g.x + g.width) - mg.x) <= 2
+                : Math.abs(g.x - (mg.x + mg.width)) <= 2 && Math.abs((g.x + g.width) - (a.x + a.width)) <= 2;
+        };
         for (const w of liste) {
             const d = o.kayit(w);
             if (d.elle || w.fullScreen) { continue; }
             const y = o.yer(w);
+            if (y === "ozel" && liste.length === 2) {
+                const m = liste[0] === w ? liste[1] : liste[0];
+                const md = o.kayit(m);
+                if ((md.elle || m.fullScreen) && !m.fullScreen && m.maximizeMode !== 3 && komsuMu(w, m, o.alan(w))) {
+                    continue;                                 // bitişik komşu: geçerli, yarıda olması gerekmez
+                }
+            }
             bekle(["tam", "sol", "sag"].includes(y), adim + ": yönetilen pencere yerinde değil (" + w.resourceClass + " → " + y + ")");
             if (liste.length === 1 && !["sag-hep", "sol-hep"].includes(o.ic.kural(w))) { esit(y, "tam", adim + ": tek pencere"); }
             if (o.ic.kural(w) === "tam") { esit(y, "tam", adim + ": tam kurallı"); }
@@ -959,9 +1171,11 @@ function degismezler(o, dokunulmaz, adim, uzaklik) {
     // dokunulmaması gerekenlere dokunulmadı mı
     for (const [w, islem] of dokunulmaz) {
         if (w.deleted) { dokunulmaz.delete(w); continue; }
-        // tek istisna: yalnızken tam duran elle pencere yanına yeni pencere gelince bırakılır
+        // istisnalar: (1) yalnızken tam duran elle pencere yanına yeni pencere gelince bırakılır
+        // (2) eş kapanınca/gizlenince yalnız kalan elle pencere büyür (otomatiğe döner)
+        // (3) yarı kurallı üstün pencere (firefox/konsole), bir eş büyütülünce kurala döner (otomatiğe)
         const dw = o.kayit(w);
-        if (dw && !dw.elle && dw.yalnizdanCozuldu) { dokunulmaz.delete(w); continue; }
+        if (dw && !dw.elle && (dw.yalnizdanCozuldu || dw.yalnizBuyudu || dw.kuralaDondu)) { dokunulmaz.delete(w); continue; }
         esit(w.betikIslem, islem, adim + ": dokunulmaması gereken pencereye dokunuldu (" + w.resourceClass + ")");
     }
 }
