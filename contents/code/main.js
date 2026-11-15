@@ -362,7 +362,8 @@ function kayit(w) {
             disarida: false,    // trs-tuval: pencere ekranın dışında (tuvalde uzakta); sayılmaz, dokunulmaz
             hedefDik: null,     // betiğin bu pencereyi en son koyduğu dikdörtgen (dışarıdan kaydırmayı anlamak için)
             hedefOnay: false,   // pencerenin hedefDik'e oturduğu bir dizmede görüldü
-            tuvaldan: false     // elle sayılması tuvalden geldi (iz)
+            tuvaldan: false,    // elle sayılması tuvalden geldi (yumuşak elle: biri yaslanınca otomatiğe döner)
+            doseliydi: false    // son bakışta döşenmiş miydi (yeni yaslamayı anlamak için)
         };
         durum.set(k, d);
     }
@@ -1314,6 +1315,30 @@ function ekranDisi(w) {
 
 function tuvalIsaretle() {
     const simdi = Date.now();
+    // kullanıcı bir pencereyi YENİ yasladıysa: aynı ekrandaki, yalnız tuval taşıdığı için elle sayılan (yumuşak elle)
+    // pencereler yeniden otomatiğe döner, öbür yarıya yerleşir (terminali sola yaslayınca Firefox sağa geçer)
+    const yeniDose = [];
+    for (const w of pencereler.values()) {
+        const d = durum.get(kimlik(w));
+        if (!d) {
+            continue;
+        }
+        const dz = dosendiMi(w);
+        if (dz && !d.doseliydi) {
+            yeniDose.push(w);
+        }
+        d.doseliydi = dz;
+    }
+    for (const w of yeniDose) {
+        for (const o of pencereler.values()) {
+            const od = durum.get(kimlik(o));
+            if (o !== w && od && od.elle && od.tuvaldan && !od.disarida && !dosendiMi(o) && ayniYerde(w, o)) {
+                od.elle = false;
+                od.tuvaldan = false;
+                od.hedefOnay = false;
+            }
+        }
+    }
     for (const w of pencereler.values()) {
         const d = durum.get(kimlik(w));
         if (!d || d.tasiniyor || w.minimized) {

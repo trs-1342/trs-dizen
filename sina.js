@@ -499,6 +499,20 @@ senaryo("tuval: büyütülmüş pencere kaydırılınca elle sayılır, ekran d�
     bekle(a.maximizeMode === 0 && a._geo.y < -1000, "dışarıdaki büyük pencereye dokunuldu");
     hatasiz(o);
 });
+senaryo("tuval: yumuşak elle pencere, başka pencere yaslanınca otomatiğe döner ve karşıya geçer", function () {
+    const o = new Ortam(); const t = o.ac(KON); const f = o.ac(FF); o.otur();
+    o.ilerle(1500); f.tKaydir(-200, 40); t.kSimge(true); o.otur(); t.kSimge(false); o.otur();
+    bekle(o.kayit(f).elle && o.kayit(f).tuvaldan, "firefox tuvalden elle sayılmadı");
+    t.kYasla("sol"); o.otur(); o.otur();
+    bekle(!o.kayit(f).elle, "yaslamadan sonra firefox otomatiğe dönmedi");
+    esit(o.yer(f), "sag", "firefox karşı yarıya geçmeli"); hatasiz(o);
+});
+senaryo("tuval: kullanıcının kendi taşıdığı (sürüklediği) pencere yaslamayla otomatiğe dönmez", function () {
+    const o = new Ortam(); const t = o.ac(KON); const f = o.ac(FF); o.otur();
+    f.kTasi({ x: 300, y: 200, width: 800, height: 600 }); o.otur();
+    t.kYasla("sol"); o.otur(); o.otur();
+    bekle(o.kayit(f).elle, "kullanıcının taşıdığı pencere elle kalmalı");
+});
 senaryo("bölme: aynı yarıya düşen iki otomatik pencere yarıyı dikeyde paylaşır, üst üste binmez", function () {
     const o = new Ortam(); o.ayarDegistir("Bolme", "true");
     const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
