@@ -22,6 +22,26 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+BASLANGIC = time.monotonic()
+
+
+def oturum_yasi():
+    """Oturumun yaşı (sn) = kwin_wayland sürecinin yaşı; servis yeniden başlasa da doğru kalır."""
+    try:
+        hz = os.sysconf("SC_CLK_TCK")
+        acik = float(open("/proc/uptime").read().split()[0])
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                try:
+                    if open(f"/proc/{d}/comm").read().strip() == "kwin_wayland":
+                        bas = int(open(f"/proc/{d}/stat").read().rsplit(")", 1)[1].split()[19]) / hz
+                        return int(acik - bas)
+                except OSError:
+                    continue
+    except Exception:
+        pass
+    return int(time.monotonic() - BASLANGIC)
+
 DURUM_DIZIN = Path(os.environ.get("TRS_PENCERE_DURUM") or Path.home() / ".local/state/trs-dizen")
 GUNLUK = DURUM_DIZIN / "olaylar.jsonl"
 OGRENME = DURUM_DIZIN / "ogrenme.json"
@@ -264,10 +284,15 @@ def servis():
 
         @dbus.service.method("net.trs.Pencere", in_signature="", out_signature="s")
         def tuvalOku(self):
+            # _oturumYasi: servis oturumla başlar; tuval kalıcılığı yalnız oturum açılışında geri koyar
             try:
-                return (DURUM_DIZIN / "tuval.json").read_text(encoding="utf-8")
+                d = json.loads((DURUM_DIZIN / "tuval.json").read_text(encoding="utf-8"))
+                if not isinstance(d, dict):
+                    d = {}
             except Exception:
-                return "{}"
+                d = {}
+            d["_oturumYasi"] = oturum_yasi()
+            return json.dumps(d)
 
         @dbus.service.method("net.trs.Pencere", in_signature="", out_signature="s")
         def durumMetni(self):
