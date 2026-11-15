@@ -52,6 +52,12 @@
       "her zaman üstte" olanlar · birden çok (ya da bütün) masaüstünde görünenler · birden çok etkinlikte
       görünenler (yalnızca birden fazla etkinlik varsa) · boyutu değiştirilemeyenler · görev çubuğunda
       görünmeyenler · HARIC listesindekiler · simge durumuna küçültülmüş olanlar (geri gelince sayılır)
+      · ortası ekranın DIŞINDA kalanlar (trs-tuval: tuvalde uzakta duran pencere)
+
+    trs-tuval uyumu (her masaüstü sonsuz tuval): tuval kaydırılınca pencereler gerçekten ekran dışına
+    taşınır. Ekran dışındaki pencere sayılmaz, ona dokunulmaz, yeri hatırlanmaz, odak taşımasına girmez.
+    Dışarıdan ekrana geri gelen ya da betiğin koyduğu yerden (boyutu aynı) kaydırılan pencere elle
+    yerleştirilmiş sayılır: tuvalin koyduğu yerde kalır. 100%'de açılan yeni pencereler yine kurala göre.
 
     Tam ekran (F11, video) pencere: sayılmaya devam eder ama dokunulmaz; böylece video izlerken
     öbür pencereler yer değiştirmez.
@@ -102,6 +108,7 @@ let KURAL_HEMEN = true;         // kural değişince açık pencereler hemen yen
 // Yukarıdaki üç karar kullanıcıca değiştirilebilir (TRS Durum → Davranış): kwinrc [Script-trsdizen]
 // KararDogumMs (0–5000), KararKapanisMs (0–2000), KararKuralHemen (1/0). Yoksa ya da geçersizse varsayılan kalır.
 const TOLERANS = 2;             // "zaten yerinde" sayılması için piksel payı
+const TUVAL_KAYMA = 60;         // boyutu aynı kalıp bundan fazla kaydırılan pencere dışarıdan (trs-tuval) taşınmıştır
 
 const YERLER = ["tam", "sag", "sol", "sag-hep", "sol-hep", "orta", "yardimci", "genel"];
 
@@ -289,8 +296,8 @@ function ffGizliGuncelle(w) {
 function hatirla(w, d) {
     const ad = programAdi(w);
     if (!ad || !d.elle || d.yardimci || d.haric || !w.normalWindow || w.transient || w.dialog
-        || w.fullScreen || !w.output || programinBaskaPenceresi(w, ad)) {
-        return;
+        || w.fullScreen || !w.output || ekranDisi(w) || programinBaskaPenceresi(w, ad)) {
+        return;                                       // ekran dışındaki (tuvalde uzak) yer hatırlanmaz
     }
     const g = w.frameGeometry;
     hatira.delete(ad);
@@ -351,7 +358,11 @@ function kayit(w) {
             tasimaOynadi: false,
             sayildi: false,     // son dizmede yerleşim hesabına girdi mi
             sonGrupBoyu: 0,     // son dizmede masaüstündeki sayılan pencere sayısı (0: sayılmadı)
-            kuralaDon: false    // (kurallı üstün) bir eş büyütülünce: bu dizmede elle sayılmaktan çık, kurala dön
+            kuralaDon: false,   // (kurallı üstün) bir eş büyütülünce: bu dizmede elle sayılmaktan çık, kurala dön
+            disarida: false,    // trs-tuval: pencere ekranın dışında (tuvalde uzakta); sayılmaz, dokunulmaz
+            hedefDik: null,     // betiğin bu pencereyi en son koyduğu dikdörtgen (dışarıdan kaydırmayı anlamak için)
+            hedefOnay: false,   // pencerenin hedefDik'e oturduğu bir dizmede görüldü
+            tuvaldan: false     // elle sayılması tuvalden geldi (iz)
         };
         durum.set(k, d);
     }
@@ -636,6 +647,8 @@ function doseyiBirak(w) {
 }
 
 function tamYap(w, d) {
+    d.hedefDik = null;
+    d.hedefOnay = false;
     istekYap(w, d, "tam", w.maximizeMode === 3, function () {
         if (w.maximizable === false) {
             doseyiBirak(w);
@@ -647,6 +660,10 @@ function tamYap(w, d) {
 }
 
 function yereKoy(w, d, hedef, ad) {
+    if (!d.hedefDik || !yakin(d.hedefDik, hedef)) {
+        d.hedefDik = { x: hedef.x, y: hedef.y, width: hedef.width, height: hedef.height };
+        d.hedefOnay = false;
+    }
     // az önce "tam" istediysek pencere henüz büyümemiş görünse de büyüyecektir: önce onu geri al
     const tamYolda = d.istek === "tam" && Date.now() - d.istekZamani < ISTEK_SURE;
     istekYap(w, d, ad, w.maximizeMode === 0 && yakin(w.frameGeometry, hedef), function () {
@@ -1084,7 +1101,7 @@ function hesapla(liste) {
 
 // Sayılan pencere mi? (yerleşim hesabına girer)
 function sayilir(w) {
-    if (!ilgili(w) || w.minimized) {
+    if (!ilgili(w) || w.minimized || kayit(w).disarida) {
         return false;
     }
     return kural(w) !== "orta" && !kayit(w).yardimci;
@@ -1263,6 +1280,58 @@ function dosenenleriIsaretle() {
     return yeni;
 }
 
+// ── trs-tuval uyumu ────────────────────────────────────────────────────────────────────────────
+// Her masaüstü sonsuz bir tuvaldir (trs-tuval). Tuval kaydırılınca pencereler gerçekten ekranın
+// dışına taşınır. Kural: ortası ekran alanının dışında kalan pencere sayılmaz ve ona hiç dokunulmaz.
+// Dışarıdan ekrana geri gelen pencere ya da betiğin koyduğu yerden boyutu aynı kalıp kaydırılan
+// pencere (Wayland'da program kendini taşıyamaz: bunu tuval yapmıştır) elle yerleştirilmiş sayılır.
+function ekranDisi(w) {
+    try {
+        const g = w.frameGeometry, a = alan(w);
+        const cx = g.x + g.width / 2, cy = g.y + g.height / 2;
+        return cx < a.x || cx >= a.x + a.width || cy < a.y || cy >= a.y + a.height;
+    } catch (hata) {
+        return false;
+    }
+}
+
+function tuvalIsaretle() {
+    const simdi = Date.now();
+    for (const w of pencereler.values()) {
+        const d = durum.get(kimlik(w));
+        if (!d || d.tasiniyor || w.minimized) {
+            continue;
+        }
+        if (ekranDisi(w)) {
+            d.disarida = true;
+            continue;
+        }
+        if (d.disarida) {
+            d.disarida = false;
+            if (!d.elle) {
+                d.elle = true;
+                d.tuvaldan = true;
+            }
+            continue;
+        }
+        const h = d.hedefDik;
+        if (d.elle || !h || w.maximizeMode !== 0) {
+            d.hedefOnay = false;                          // elle iken eski hedef bayatlar: yeniden doğrulanmalı
+            continue;
+        }
+        const g = w.frameGeometry;
+        if (yakin(g, h)) {
+            d.hedefOnay = true;                           // betiğin koyduğu yerde görüldü
+        } else if (d.hedefOnay && simdi - d.istekZamani > ISTEK_SURE
+            && Math.abs(g.width - h.width) <= TOLERANS && Math.abs(g.height - h.height) <= TOLERANS
+            && (Math.abs(g.x - h.x) > TUVAL_KAYMA || Math.abs(g.y - h.y) > TUVAL_KAYMA)) {
+            d.elle = true;                                // yerine oturmuştu, sonra dışarıdan kaydırıldı
+            d.tuvaldan = true;
+            d.hedefOnay = false;
+        }
+    }
+}
+
 // Kapandığı bize bildirilmemiş pencereleri ayıkla. Yok edilmiş bir pencerenin özelliğine dokunmak
 // hata verir; ayıklanmazsa o tek pencere bütün dizmeyi durdururdu.
 function olenleriAyikla() {
@@ -1288,6 +1357,7 @@ function hepsiniDiz() {
     let gruplar;
     try {
         dosenenleriIsaretle();
+        tuvalIsaretle();
         gruplar = grupla();
     } catch (hata) {
         print("trsdizen hata (gruplama): " + hata);
@@ -1400,7 +1470,7 @@ function odakDegisti(w) {
         return;
     }
     const o = pencereler.get(once);
-    if (!o || o.deleted || w.deleted || !ilgili(w) || !ilgili(o) || !ayniYerde(w, o)) {
+    if (!o || o.deleted || w.deleted || !ilgili(w) || !ilgili(o) || !ayniYerde(w, o) || ekranDisi(w) || ekranDisi(o)) {
         return;
     }
     const yw = durduguYer(w);

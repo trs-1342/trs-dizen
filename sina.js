@@ -309,6 +309,12 @@ class Pencere {
     kEtkinlik(liste) { this.activities = liste; this.activitiesChanged.emit(); }
     kEkran(e) { const eski = this.output; this.output = e; this._geoKoy({ x: e.alan.x + 200, y: 100, width: 1200, height: 800 }); this.outputChanged.emit(eski); }
     kUstte(ac) { this.keepAbove = ac; this.keepAboveChanged.emit(); }
+    // trs-tuval: tuval kaydırması (betik değil, başka bir KWin parçası taşır; büyükse önce küçültür)
+    tKaydir(dx, dy) {
+        let g = Object.assign({}, this._geo);
+        if (this.maximizeMode !== 0) { this._buyut(0); }
+        this._geoKoy({ x: g.x + dx, y: g.y + dy, width: g.width, height: g.height });
+    }
     // programın kendi yaptıkları
     pBoyut(g) { this._geoKoy(g); }
     pSinif(sinif) { this.resourceClass = sinif; this.windowClassChanged.emit(); }
@@ -457,6 +463,49 @@ senaryo("pencereyi tutup bırakmak (oynatmadan) elle sayılmaz; taşımak sayıl
     const a = o.alan(f), gf = f._geo, gt = t._geo;
     bekle(Math.abs(gf.x - (gt.x + gt.width)) <= 2, "firefox t'nin sağ bitişiğinde değil: " + gf.x + " vs " + (gt.x + gt.width));
     bekle(Math.abs((gf.x + gf.width) - (a.x + a.width)) <= 2 && Math.abs(gf.height - a.height) <= 2, "firefox kalan alanı doldurmadı");
+});
+
+senaryo("tuval: ekran dışına kaydırılan pencere sayılmaz, dokunulmaz; kalan tek pencere tam olur", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    esit(o.yer(t), "sol", "konsole"); esit(o.yer(f), "sag", "firefox");
+    f.tKaydir(3000, 0); o.otur();
+    const gf = Object.assign({}, f._geo), islem = f.betikIslem;
+    o.ac({ sinif: "a" }); o.otur();                       // olay gelsin, dizme çalışsın
+    bekle(o.kayit(f).disarida, "firefox dışarıda sayılmadı");
+    bekle(f._geo.x === gf.x && f.betikIslem === islem, "ekran dışındaki pencereye dokunuldu");
+    hatasiz(o);
+});
+senaryo("tuval: dışarıdan ekrana geri gelen pencere elle sayılır, yerinde kalır", function () {
+    const o = new Ortam(); const f = o.ac(FF); const t = o.ac(KON); o.otur();
+    f.tKaydir(-4000, 0); t.tKaydir(-4000, 0); o.ac({ sinif: "a" }); o.otur();
+    bekle(o.kayit(f).disarida && o.kayit(t).disarida, "ikisi de dışarıda olmalı");
+    f.tKaydir(4000 - 300, 0); t.tKaydir(4000 - 300, 0); o.ac({ sinif: "b" }); o.otur();
+    bekle(!o.kayit(f).disarida, "firefox geri geldi ama dışarıda sayılıyor");
+    bekle(o.kayit(f).elle, "geri gelen firefox elle sayılmadı");
+    hatasiz(o);
+});
+senaryo("tuval: ekranda kalıp kaydırılan pencere (boyut aynı) elle sayılır, geri çekilmez", function () {
+    const o = new Ortam(); const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
+    o.ilerle(1500);
+    a.tKaydir(300, 120); const g = Object.assign({}, a._geo);
+    b.kSimge(true); o.otur(); b.kSimge(false); o.otur();  // olay gelsin
+    bekle(o.kayit(a).elle && o.kayit(a).tuvaldan, "kaydırılan pencere elle sayılmadı");
+    bekle(a._geo.x === g.x && a._geo.y === g.y, "kaydırılan pencere geri çekildi");
+});
+senaryo("tuval: büyütülmüş pencere kaydırılınca elle sayılır, ekran dışındaysa dokunulmaz", function () {
+    const o = new Ortam(); const a = o.ac({ sinif: "a" }); o.otur(); esit(o.yer(a), "tam", "a");
+    a.tKaydir(0, -3000); o.ac({ sinif: "b" }); o.otur();
+    bekle(o.kayit(a).disarida, "büyük pencere dışarıda sayılmadı");
+    bekle(a.maximizeMode === 0 && a._geo.y < -1000, "dışarıdaki büyük pencereye dokunuldu");
+    hatasiz(o);
+});
+senaryo("tuval: ekran dışındaki elle pencerenin yeri hatırlanmaz (yeniden açılınca görünmez yerde açılmasın)", function () {
+    const o = new Ortam(); const k = o.ac(KATE); o.otur();
+    k.kTasi({ x: 100, y: 100, width: 700, height: 500 }); o.otur();
+    k.tKaydir(5000, 0); o.ac({ sinif: "a" }); o.otur();
+    o.kapat(k); o.otur();
+    const k2 = o.ac(KATE); o.otur();
+    bekle(k2._geo.x < 1920, "yeniden açılan kate ekran dışında açıldı: x=" + k2._geo.x);
 });
 
 senaryo("komşu uyumu: Firefox'u elle genişletince terminal bitişikte kalır, boşluk olmaz", function () {
@@ -1096,7 +1145,7 @@ senaryo("saçma oranlı kural (eksi, 4 kat) yok sayılır; '~' içinde arar; 'ge
 senaryo("durum raporu bağlı pencereyi ve sayılmama nedenini gösterir", function () {
     const o = new Ortam(); const f = o.ac(FF); o.ac({ sinif: "x", ana: f }); o.ac({ sinif: "y", ustte: true }); o.otur();
     o.ayarDegistir("RaporIste", "r"); const rap = o.dbus.filter(function (c) { return c[0] === "org.freedesktop.DBus"; }); const m = String(rap[rap.length - 1][4]);
-    bekle(m.indexOf("HAYIR(bagli,izliyor)") !== -1 && m.indexOf("HAYIR(ustte)") !== -1 && m.indexOf("surum=3") !== -1, "rapor eksik: " + m);
+    bekle(m.indexOf("HAYIR(bagli,izliyor)") !== -1 && m.indexOf("HAYIR(ustte)") !== -1 && m.indexOf("surum=4") !== -1, "rapor eksik: " + m);
 });
 
 // ── 2. Rastgele olaylar ────────────────────────────────────────────────────────────────────────

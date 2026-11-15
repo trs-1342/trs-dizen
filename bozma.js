@@ -17,6 +17,12 @@ const ES = Math.max(1, Number(process.argv[process.argv.indexOf("-j") + 1]) || M
 
 // [ne bozuluyor, aranan metin, yerine konan]
 const BOZMALAR = [
+    ["tuval: ekran dışındaki pencere sayılır", "w.minimized || kayit(w).disarida) {", "w.minimized) {"],
+    ["tuval: işaretleme hiç çalışmaz", "        tuvalIsaretle();\n", ""],
+    ["tuval: geri gelen pencere elle sayılmaz", "d.disarida = false;\n            if (!d.elle) {\n                d.elle = true;", "d.disarida = false;\n            if (!d.elle) {\n                d.elle = false;"],
+    ["tuval: kaydırılan pencere elle sayılmaz", "            d.elle = true;                                // yerine oturmuştu", "            d.elle = false;                               // yerine oturmuştu"],
+    ["tuval: ekran dışı yer hatırlanır", "!w.output || ekranDisi(w) || programinBaskaPenceresi", "!w.output || programinBaskaPenceresi"],
+    ["tuval: bayat hedef sıfırlanmaz", "            d.hedefOnay = false;                          // elle iken", "            // elle iken"],
     ["yalnızken tam pencere yeni gelenle bölünür", "    yalnizTamiCoz(liste);\n", ""],
     ["kalabalıkta büyütülen bölünmez (yalnızlık şartı)", "d.elle && d.sonGrupBoyu === 1 &&", "d.elle &&"],
     ["Firefox gizli bildirimi gitmez", "d.ffGizli = gizli;\n        servise(\"ffGizli\", gizli);", "d.ffGizli = gizli;"],
@@ -54,7 +60,8 @@ const BOZMALAR = [
     ["sürükleme adımı kanıttır", "d.tasimaOynadi = true;", "d.tasimaOynadi = false;"],
     ["oynatmadan bırakma elle değil", "const oynadi = d.tasimaOynadi || !once || !yakin(once, w.frameGeometry);", "const oynadi = true;"],
     ["bağlı pencereyi elle taşıma", "if (oynadi && (ilgili(w) || bagliCocuk(w))) {", "if (oynadi && ilgili(w)) {"],
-    ["döşenen pencere dizmeden önce işaretlenir", "        dosenenleriIsaretle();\n        gruplar = grupla();", "        gruplar = grupla();"],
+    // "döşenen pencere dizmeden önce işaretlenir" kaldırıldı (2026-11-15): tuval kuralı (yerine oturmuş pencere
+    // boyutu aynı kalıp kaydırılırsa elle) yaslamayı da yakaladığı için bu bozma sınamada artık eşdeğer.
     ["döşenen pencere izlemeden önce işaretlenir", "let yenidenDiz = dosenenleriIsaretle();", "let yenidenDiz = false;"],
     ["döşemeden çıkış elle değil", "    if (dosendiMi(w)) {\n        elleYap(d);", "    if (true) {\n        elleYap(d);"],
     ["sıfırlarken döşemeyi bırak", "degistir(function () { doseyiBirak(w); });    // döşemede kalan pencere yeniden elle sayılırdı", ""],
@@ -89,7 +96,7 @@ const BOZMALAR = [
     ["yalın sözcük parça eşleşmesi", 'tur: /[.\\- ]/.test(a) ? "icinde" : "parca"', 'tur: "icinde"'],
     ["üstte pencere sayılmaz", '    if (w.keepAbove) {\n        return "ustte";\n    }', ""],
     ["bağlı pencere sayılmaz", '    if (w.transient) {\n        return "bagli";\n    }', ""],
-    ["simge durumundaki sayılmaz", "    if (!ilgili(w) || w.minimized) {\n        return false;\n    }\n    return kural(w)", "    if (!ilgili(w)) {\n        return false;\n    }\n    return kural(w)"],
+    ["simge durumundaki sayılmaz", "    if (!ilgili(w) || w.minimized || kayit(w).disarida) {", "    if (!ilgili(w) || kayit(w).disarida) {"],
     ["'orta' sayılmaz", 'return kural(w) !== "orta" && !kayit(w).yardimci;', "return !kayit(w).yardimci;"],
     ["yoldaki 'tam' isteği geri alınır", "if (w.maximizeMode !== 0 || tamYolda) {", "if (w.maximizeMode !== 0) {"],
     ["yoldaki aynı istek yinelenmez", "    if (ucusta && d.istek === ad) {\n        dogrula();\n        return;\n    }", ""],
