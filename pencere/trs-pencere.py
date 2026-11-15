@@ -229,6 +229,29 @@ def servis():
                 if durum["ff_gizli"] == 0:
                     parlaklik_geri()
 
+        # trs-tuval kalıcılığı: tuval yerleşimi (JSON) ~/.local/state/trs-dizen/tuval.json
+        @dbus.service.method("net.trs.Pencere", in_signature="s", out_signature="")
+        def tuvalYaz(self, s):
+            try:
+                json.loads(s)                              # yalnız geçerli JSON yazılır
+                if len(s) > 2_000_000:
+                    return
+                DURUM_DIZIN.mkdir(mode=0o700, parents=True, exist_ok=True)
+                yol = DURUM_DIZIN / "tuval.json"
+                gecici = yol.with_suffix(".json.tmp")
+                gecici.write_text(s, encoding="utf-8")
+                os.chmod(gecici, 0o600)
+                os.replace(gecici, yol)
+            except Exception:
+                pass
+
+        @dbus.service.method("net.trs.Pencere", in_signature="", out_signature="s")
+        def tuvalOku(self):
+            try:
+                return (DURUM_DIZIN / "tuval.json").read_text(encoding="utf-8")
+            except Exception:
+                return "{}"
+
         @dbus.service.method("net.trs.Pencere", in_signature="", out_signature="s")
         def durumMetni(self):
             return json.dumps({"olay": durum["olay"], "toplam": ogrenme.toplam, "ff_gizli": durum["ff_gizli"]})
