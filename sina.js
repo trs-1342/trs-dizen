@@ -499,6 +499,25 @@ senaryo("tuval: büyütülmüş pencere kaydırılınca elle sayılır, ekran d�
     bekle(a.maximizeMode === 0 && a._geo.y < -1000, "dışarıdaki büyük pencereye dokunuldu");
     hatasiz(o);
 });
+senaryo("bölme: aynı yarıya düşen iki otomatik pencere yarıyı dikeyde paylaşır, üst üste binmez", function () {
+    const o = new Ortam(); o.ayarDegistir("Bolme", "true");
+    const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
+    const c = o.ac({ sinif: "c" }); o.otur();
+    const al = o.alan(a), yari = Math.floor(al.width / 2);
+    const ayniYarida = [a, b, c].filter(function (w) { return w._geo.width === (w._geo.x === al.x ? yari : al.width - yari); });
+    esit(ayniYarida.length, 3, "üçü de bir yarı genişliğinde değil");
+    const ust = [a, b, c].filter(function (w) { return w._geo.height < al.height; });
+    esit(ust.length, 2, "aynı yarıdaki iki pencere bölünmedi");
+    bekle(ust[0]._geo.y + ust[0]._geo.height <= ust[1]._geo.y || ust[1]._geo.y + ust[1]._geo.height <= ust[0]._geo.y, "dilimler üst üste biniyor");
+    o.kapat(c); o.otur();
+    esit(o.yer(a), "sol", "c kapanınca a yeniden tam yarı"); esit(o.yer(b), "sag", "c kapanınca b yeniden tam yarı");
+    hatasiz(o);
+});
+senaryo("bölme: kapalıyken eski davranış (üçüncü pencere bir yarının üstüne gelir)", function () {
+    const o = new Ortam(); const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
+    const c = o.ac({ sinif: "c" }); o.otur();
+    esit(o.yer(a), "sol", "a"); esit(o.yer(b), "sag", "b"); bekle(["sol", "sag"].includes(o.yer(c)), "c yarıda değil");
+});
 senaryo("tuval: haritada boyutlanan pencere bildirilince elle sayılır, dizen geri çekmez", function () {
     const o = new Ortam(); const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
     a.pBoyut({ x: 100, y: 100, width: 700, height: 500 });          // haritada boyutlama (betik dışı)

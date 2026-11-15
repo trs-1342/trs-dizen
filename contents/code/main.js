@@ -1247,6 +1247,17 @@ function uygula(liste) {
         kayit(w).sonGrupBoyu = liste.length;
     }
     const sonuc = hesapla(liste);
+    // Bölme (Hyprland benzeri, kwinrc [Script-trsdizen] Bolme=true): aynı yarıya düşen OTOMATİK pencereler üst
+    // üste binmez, o yarıyı dikeyde açılış sırasıyla eşit paylaşır (eskisi üstte). Elle/sabit pencereler katılmaz.
+    const dilimler = new Map();
+    if (ayarOku("Bolme") === "true") {
+        for (const taraf of ["sol", "sag"]) {
+            const grup = liste.filter(function (w) { return !sonuc.sabit.has(w) && sonuc.yer.get(w) === taraf; });
+            if (grup.length >= 2) {
+                grup.forEach(function (w, i) { dilimler.set(w, { i: i, k: grup.length }); });
+            }
+        }
+    }
     for (const w of liste) {
         const d = kayit(w);
         if (sonuc.sabit.has(w)) {
@@ -1258,7 +1269,13 @@ function uygula(liste) {
         if (y === "tam") {
             tamYap(w, d);
         } else if (y === "sol" || y === "sag") {
-            const hedef = yariDikdortgen(a, y);
+            let hedef = yariDikdortgen(a, y);
+            const dl = dilimler.get(w);
+            if (dl) {                                    // bölme: yarının i. dilimi
+                const boy = Math.floor(hedef.height / dl.k);
+                hedef = { x: hedef.x, y: hedef.y + dl.i * boy, width: hedef.width,
+                          height: dl.i === dl.k - 1 ? hedef.height - dl.i * boy : boy };
+            }
             yereKoy(w, d, hedef, y + ":" + anahtar(hedef));
         } else if (y && typeof y === "object") {
             yereKoy(w, d, y, "komsu:" + anahtar(y));       // komşu uyumu: bitişik dikdörtgen
