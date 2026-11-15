@@ -1730,7 +1730,7 @@ function pencereKaldirildi(w) {
 }
 
 // ── Devir: betik yeniden yüklenirken durum eskisinden yenisine geçer ───────────────────────────
-// Biçim: "zaman|kimlik,elle,taraf,yardimci,ana,sira,yer;..."  (yardimci: 0 yok, k kuralla, o boyutla)
+// Biçim: "zaman|kimlik,elle,taraf,yardimci,ana,sira,yer;..."  (elle: 0 yok, 1 elle, 2 tuvalden elle; yardimci: 0 yok, k kuralla, o boyutla)
 // zaman: devrin alındığı an (ms). Eski bir devir (betik başka yoldan yeniden yüklendiyse) kullanılmaz.
 const DEVIR_OMRU = 13000;
 function devirMetni() {
@@ -1738,7 +1738,7 @@ function devirMetni() {
     for (const k of pencereler.keys()) {
         const d = durum.get(k);
         if (d) {
-            parcalar.push([k, d.elle ? 1 : 0, d.taraf, d.yardimci ? (d.yardimciOto ? "o" : "k") : 0, d.ana, d.sira, d.yer].join(","));
+            parcalar.push([k, d.elle ? (d.tuvaldan ? 2 : 1) : 0, d.taraf, d.yardimci ? (d.yardimciOto ? "o" : "k") : 0, d.ana, d.sira, d.yer].join(","));
         }
     }
     return parcalar.join(";");
@@ -1755,7 +1755,7 @@ function devirOku() {
     for (const parca of ham.substring(ayrac + 1).split(";")) {
         const a = parca.split(",");
         if (a.length >= 7 && a[0]) {
-            m.set(a[0], { elle: a[1] === "1", taraf: a[2], yardimci: a[3], ana: a[4], sira: Number(a[5]) || 0, yer: a[6] });
+            m.set(a[0], { elle: a[1] === "1" || a[1] === "2", tuvaldan: a[1] === "2", taraf: a[2], yardimci: a[3], ana: a[4], sira: Number(a[5]) || 0, yer: a[6] });
         }
     }
     return m;
@@ -1814,6 +1814,7 @@ function devral() {
         const v = devir.get(kimlik(w));
         if (v) {
             d.elle = v.elle;
+            d.tuvaldan = !!v.tuvaldan;
             d.taraf = v.taraf === "sol" || v.taraf === "sag" ? v.taraf : "";
             d.yardimci = v.yardimci === "k" || v.yardimci === "o";
             d.yardimciOto = v.yardimci === "o";
