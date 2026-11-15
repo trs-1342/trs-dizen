@@ -499,6 +499,15 @@ senaryo("tuval: büyütülmüş pencere kaydırılınca elle sayılır, ekran d�
     bekle(a.maximizeMode === 0 && a._geo.y < -1000, "dışarıdaki büyük pencereye dokunuldu");
     hatasiz(o);
 });
+senaryo("tuval: haritada boyutlanan pencere bildirilince elle sayılır, dizen geri çekmez", function () {
+    const o = new Ortam(); const a = o.ac({ sinif: "a" }); const b = o.ac({ sinif: "b" }); o.otur();
+    a.pBoyut({ x: 100, y: 100, width: 700, height: 500 });          // haritada boyutlama (betik dışı)
+    o.ayarDegistir("TuvalElleIste", "1|" + a.internalId); o.otur();
+    bekle(o.kayit(a).elle && o.kayit(a).tuvaldan, "bildirilen pencere elle sayılmadı");
+    b.kSimge(true); o.otur(); b.kSimge(false); o.otur();
+    esit(a._geo.width, 700, "boyutlanan pencere geri çekildi");
+    o.ayarDegistir("TuvalElleIste", "2|{yok}"); o.otur(); hatasiz(o);
+});
 senaryo("tuval: ekran dışındaki elle pencerenin yeri hatırlanmaz (yeniden açılınca görünmez yerde açılmasın)", function () {
     const o = new Ortam(); const k = o.ac(KATE); o.otur();
     k.kTasi({ x: 100, y: 100, width: 700, height: 500 }); o.otur();

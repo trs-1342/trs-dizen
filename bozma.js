@@ -17,6 +17,7 @@ const ES = Math.max(1, Number(process.argv[process.argv.indexOf("-j") + 1]) || M
 
 // [ne bozuluyor, aranan metin, yerine konan]
 const BOZMALAR = [
+    ["tuval: haritadaki elle bildirimi işlenmez", "        tuvalElleIsle(ayarOku(\"TuvalElleIste\"));\n", ""],
     ["tuval: ekran dışındaki pencere sayılır", "w.minimized || kayit(w).disarida) {", "w.minimized) {"],
     ["tuval: işaretleme hiç çalışmaz", "        tuvalIsaretle();\n", ""],
     ["tuval: geri gelen pencere elle sayılmaz", "d.disarida = false;\n            if (!d.elle) {\n                d.elle = true;", "d.disarida = false;\n            if (!d.elle) {\n                d.elle = false;"],

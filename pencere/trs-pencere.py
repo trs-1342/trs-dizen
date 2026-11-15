@@ -245,6 +245,23 @@ def servis():
             except Exception:
                 pass
 
+        # trs-tuval: haritada elle taşınan/boyutlanan pencereleri trs-dizen'e bildirir (kwinrc istek anahtarı).
+        # Servis sandbox'ta kwinrc'ye yazamaz: kwriteconfig6 systemd-run ile kullanıcı oturumunda çalışır.
+        @dbus.service.method("net.trs.Pencere", in_signature="s", out_signature="")
+        def tuvalElle(self, kimlikler):
+            try:
+                temiz = ",".join(k for k in str(kimlikler).split(",") if re.fullmatch(r"\{[0-9a-fA-F-]{36}\}", k.strip()))
+                if not temiz:
+                    return
+                deger = f"{int(time.time() * 1000)}|{temiz}"
+                subprocess.run(["systemd-run", "--user", "--quiet", "--collect", "--wait",
+                                "kwriteconfig6", "--file", "kwinrc", "--group", "Script-trsdizen",
+                                "--key", "TuvalElleIste", deger], timeout=5, check=False)
+                subprocess.run(["qdbus-qt6", "org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure"],
+                               timeout=5, check=False, stdout=subprocess.DEVNULL)
+            except Exception:
+                pass
+
         @dbus.service.method("net.trs.Pencere", in_signature="", out_signature="s")
         def tuvalOku(self):
             try:

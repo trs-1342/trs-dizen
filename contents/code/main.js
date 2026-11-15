@@ -1332,6 +1332,28 @@ function tuvalIsaretle() {
     }
 }
 
+// trs-tuval haritada (uzaklaşmışken) taşınan/boyutlanan pencereleri bildirir: "zaman|kimlik,kimlik".
+// Bunlar kullanıcının elle yerleştirdiği pencerelerdir (boyut değişimi tek başına dışarıdan anlaşılamaz).
+function tuvalElleIsle(deger) {
+    const parca = String(deger).split("|");
+    if (parca.length < 2) {
+        return;
+    }
+    let degisti = false;
+    for (const k of parca[1].split(",")) {
+        const d = durum.get(k.trim());
+        if (d && !d.elle) {
+            d.elle = true;
+            d.tuvaldan = true;
+            d.hedefOnay = false;
+            degisti = true;
+        }
+    }
+    if (degisti) {
+        planla();
+    }
+}
+
 // Kapandığı bize bildirilmemiş pencereleri ayıkla. Yok edilmiş bir pencerenin özelliğine dokunmak
 // hata verir; ayıklanmazsa o tek pencere bütün dizmeyi durdururdu.
 function olenleriAyikla() {
@@ -1878,6 +1900,9 @@ function ayarDegisti() {
         }
         planla();
     }
+    if (istekGeldi("TuvalElleIste")) {
+        tuvalElleIsle(ayarOku("TuvalElleIste"));
+    }
     if (istekGeldi("SifirlaIste")) {
         sifirla();
     }
@@ -1891,7 +1916,7 @@ function ayarDegisti() {
 
 // ── Başlangıç ──────────────────────────────────────────────────────────────────────────────────
 kurallariYukle();
-for (const ad of ["SifirlaIste", "RaporIste", "DevirIste"]) {
+for (const ad of ["SifirlaIste", "RaporIste", "DevirIste", "TuvalElleIste"]) {
     sonIstek[ad] = ayarOku(ad);
 }
 
